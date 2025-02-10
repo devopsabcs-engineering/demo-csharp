@@ -1,0 +1,256 @@
+# DevOps Shield - The ultimate DevSecOps platform designed to secure your DevOps.
+# https://devopsshield.com
+##############################################################
+# This is a DevOps Shield - Application Security - Code Security Template.
+
+# This workflow template uses actions that are not certified by DevOps Shield.
+# They are provided by a third-party and are governed by separate terms of service, privacy policy, and support documentation.
+
+# Use this workflow template for integrating code security into your pipelines and workflows.
+
+# DevOps Shield Workflow Template Details:
+# ------------------------------------------------------------
+# Code: ADO_SCA_MEND
+# Name: Mend
+# DevSecOpsControls: SCA
+# Provider: Mend
+# Categories: Code Scanning, Dependency Management, JavaScript, Python, Java, PHP, C#, R, Ruby, Rust, Swift, Go, TypeScript
+# Description:
+# Vulnerability scanner for your dependencies using data provided by Mend.
+# Use Mend to find existing vulnerabilities affecting your project's dependencies.
+# Read the official documentation to find out more.
+# For more information:
+# https://www.mend.io/
+# https://github.com/whitesource/mend
+# ------------------------------------------------------------
+# Source repository: https://github.com/whitesource/mend
+##############################################################
+
+name: Mend Vulnerability Scanner
+
+trigger:
+  batch: true
+  branches:
+    include: [main]
+
+schedules:
+  - cron: 0 0 * * 0 # weekly at midnight
+    displayName: Weekly Sunday build
+    branches:
+      include: [main]
+    always: true
+
+parameters:
+  - name: variableGroupName
+    type: string
+    default: "Mend-credentials"
+  - name: useClassicDotNet
+    type: boolean
+    default: true # set to true if you are using classic .NET
+    displayName: "Use Classic .NET"
+  - name: useWindowsPool
+    type: boolean
+    default: true # set to true if you need a Windows pool e.g. for classic .NET
+    displayName: "Use Windows Pool"
+  - name: defaultWindowsPool
+    type: string
+    default: "windows-2019"
+    displayName: "Default Windows Pool"
+  - name: defaultLinuxPool
+    type: string
+    default: "ubuntu-latest"
+    displayName: "Default Linux Pool"
+
+variables:
+  - group: ${{ parameters.variableGroupName }}
+  - name: agentDownloadUrl
+    value: "https://github.com/whitesource/unified-agent-distribution/releases/latest/download/wss-unified-agent.jar"
+  - name: productPrefix
+    value: "ADO_" # product prefix
+  - name: projectPrefix
+    value: "AZDO_" # project prefix
+  - name: dotNetCoreVersion
+    value: "9.x"
+  - name: buildConfiguration
+    value: "Release"
+  - name: solution
+    value: "**/*.sln"
+  - name: buildPlatform
+    value: "Any CPU"
+
+stages:
+  - stage: Mend
+    displayName: Mend Vulnerability Scanner
+    jobs:
+      - job: Mend
+        displayName: Mend
+        pool:
+          ${{ if eq(parameters.useWindowsPool, true) }}:
+            vmImage: ${{ parameters.defaultWindowsPool }}
+          ${{ if eq(parameters.useWindowsPool, false) }}:
+            vmImage: ${{ parameters.defaultLinuxPool }}
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          # if you are using a Windows pool
+          - ${{ if eq(parameters.useWindowsPool, true) }}:
+              - task: PowerShell@2
+                inputs:
+                  targetType: "inline"
+                  script: |
+                    # Write your PowerShell commands here.
+                    $orgUrl = $env:System_CollectionUri
+                    Write-Output "Organization Url: $orgUrl"
+
+                    $orgName = $orgUrl.Split('/')[3]
+                    Write-Output "Organization Name: $orgName"
+
+                    $projectName = $env:System_TeamProject
+                    Write-Output "Project Name: $projectName"
+
+                    # get repository name
+                    $repoName = $env:Build_Repository_Name
+                    Write-Output "Repository Name: $repoName"
+
+                    # one product has one or more projects in Mend
+                    $productPrefix = "$(productPrefix)" # product prefix
+                    Write-Output "Product Prefix: $productPrefix"
+                    $projectPrefix = "$(projectPrefix)" # project prefix
+                    Write-Output "Project Prefix: $projectPrefix"
+
+                    # default Product Name should be ado org name _ azure devops project name
+                    $DEFAULT_PRODUCT_NAME = "${productPrefix}${orgName}_${projectName}"
+                    Write-Output "Default Product Name: $DEFAULT_PRODUCT_NAME"
+                    Write-Output "##vso[task.setvariable variable=DEFAULT_PRODUCT_NAME;isOutput=true]$DEFAULT_PRODUCT_NAME"
+                    $mendProductKey = $DEFAULT_PRODUCT_NAME -replace ' ', '_' # replace space with underscore
+                    Write-Output "Mend Product Key: $mendProductKey"
+                    $mendProductName = $DEFAULT_PRODUCT_NAME
+                    Write-Output "Mend Product Name: $mendProductName"
+                    Write-Output "##vso[task.setvariable variable=MEND_PRODUCT_KEY;isOutput=true]$mendProductKey"
+                    Write-Output "##vso[task.setvariable variable=MEND_PRODUCT_NAME;isOutput=true]$mendProductName"
+
+                    # default Project Name should be ado org name _ azure devops project name
+                    $DEFAULT_PROJECT_NAME = "${projectPrefix}${orgName}_${projectName}_${repoName}"
+                    Write-Output "Default Project Name: $DEFAULT_PROJECT_NAME"
+                    Write-Output "##vso[task.setvariable variable=DEFAULT_PROJECT_NAME;isOutput=true]$DEFAULT_PROJECT_NAME"
+                    $mendProjectKey = $DEFAULT_PROJECT_NAME -replace ' ', '_' # replace space with underscore
+                    Write-Output "Mend Project Key: $mendProjectKey"
+                    $mendProjectName = $DEFAULT_PROJECT_NAME
+                    Write-Output "Mend Project Name: $mendProjectName"
+                    Write-Output "##vso[task.setvariable variable=MEND_PROJECT_KEY;isOutput=true]$mendProjectKey"
+                    Write-Output "##vso[task.setvariable variable=MEND_PROJECT_NAME;isOutput=true]$mendProjectName"
+                  pwsh: true
+                displayName: "Set Mend Product and Project Key and Name (Windows Pool)"
+                name: setMendProjectKeyAndName
+          # if you are using a Linux pool
+          - ${{ if eq(parameters.useWindowsPool, false) }}:
+              - script: |
+                  orgUrl=$(System.CollectionUri)
+                  echo "Organization Url: $orgUrl"
+                  orgName=$(echo $orgUrl | cut -d'/' -f4)
+                  echo "Organization Name: $orgName"
+                  projectName=$(echo $(System.TeamProject))
+                  echo "Project Name: $projectName"
+
+                  # get repository name
+                  repoName=$(Build.Repository.Name)
+                  echo "Repository Name: $repoName"
+
+                  # one product has one or more projects in Mend
+                  productPrefix=$(productPrefix)
+                  echo "Product Prefix: $productPrefix"
+                  projectPrefix=$(projectPrefix)
+                  echo "Project Prefix: $projectPrefix"
+
+                  # default Product Name should be ado org name _ azure devops project name
+                  DEFAULT_PRODUCT_NAME="${productPrefix}${orgName}_${projectName}"
+                  echo "Default Product Name: $DEFAULT_PRODUCT_NAME"      
+                  echo "##vso[task.setvariable variable=DEFAULT_PRODUCT_NAME;isOutput=true]$DEFAULT_PRODUCT_NAME"
+                  mendProductKey=$(echo $DEFAULT_PRODUCT_NAME | tr ' ' '_')
+                  echo "Mend Product Key: ${mendProductKey}"
+                  mendProductName=$DEFAULT_PRODUCT_NAME
+                  echo "Mend Product Name: $mendProductName"
+                  echo "##vso[task.setvariable variable=MEND_PRODUCT_KEY;isOutput=true]$mendProductKey"
+                  echo "##vso[task.setvariable variable=MEND_PRODUCT_NAME;isOutput=true]$mendProductName"
+
+                  # default Project Name should be ado org name _ azure devops project name
+                  DEFAULT_PROJECT_NAME="${projectPrefix}${orgName}_${projectName}_${repoName}"
+                  echo "Default Project Name: $DEFAULT_PROJECT_NAME"
+                  echo "##vso[task.setvariable variable=DEFAULT_PROJECT_NAME;isOutput=true]$DEFAULT_PROJECT_NAME"
+                  mendProjectKey=$(echo $DEFAULT_PROJECT_NAME | tr ' ' '_')
+                  echo "Mend Project Key: ${mendProjectKey}"
+                  mendProjectName=$DEFAULT_PROJECT_NAME
+                  echo "Mend Project Name: $mendProjectName"
+                  echo "##vso[task.setvariable variable=MEND_PROJECT_KEY;isOutput=true]$mendProjectKey"
+                  echo "##vso[task.setvariable variable=MEND_PROJECT_NAME;isOutput=true]$mendProjectName"
+                displayName: "Set Mend Product and Project Key and Name (Linux Pool)"
+                name: setMendProjectKeyAndName
+          # verify if the Mend project key and name are set
+          - script: |
+              echo "Default Product Name: $(setMendProjectKeyAndName.DEFAULT_PRODUCT_NAME)"
+              echo "Mend Product Key: $(setMendProjectKeyAndName.MEND_PRODUCT_KEY)"
+              echo "Mend Product Name: $(setMendProjectKeyAndName.MEND_PRODUCT_NAME)"
+              echo "Default Project Name: $(setMendProjectKeyAndName.DEFAULT_PROJECT_NAME)"
+              echo "Mend Project Key: $(setMendProjectKeyAndName.MEND_PROJECT_KEY)"
+              echo "Mend Project Name: $(setMendProjectKeyAndName.MEND_PROJECT_NAME)"
+            displayName: "Verify Mend Project Key and Name"
+          # build project first
+          # needed for classic dotnet projects
+          - task: NuGetCommand@2
+            condition: eq('${{ parameters.useClassicDotNet }}', true) # only run this task if useClassicDotNet is true
+            displayName: "NuGet restore (.NET Framework Classic)"
+            inputs:
+              restoreSolution: "$(solution)"
+          - task: VSBuild@1
+            condition: eq('${{ parameters.useClassicDotNet }}', true) # only run this task if useClassicDotNet is true
+            displayName: "Build .NET Framework Classic"
+            inputs:
+              solution: "$(solution)"
+              platform: "$(buildPlatform)"
+              configuration: "$(buildConfiguration)"
+          # needed for dotnet core projects
+          - task: UseDotNet@2
+            condition: eq('${{ parameters.useClassicDotNet }}', false) # only run this task if useClassicDotNet is false
+            displayName: "Use .NET Core sdk"
+            inputs:
+              packageType: "sdk"
+              version: "$(dotNetCoreVersion)"
+          - task: DotNetCoreCLI@2
+            condition: eq('${{ parameters.useClassicDotNet }}', false) # only run this task if useClassicDotNet is false
+            displayName: "Build .NET Core"
+            inputs:
+              command: "build"
+              projects: "**/*.csproj"
+              arguments: "--configuration $(buildConfiguration)"
+          - script: |
+              curl -LJO $(agentDownloadUrl)
+            displayName: "curl to get latest whitesource jar scanner"
+            enabled: true
+          - ${{ if eq(parameters.useWindowsPool, true) }}:
+              - task: PowerShell@2
+                inputs:
+                  targetType: "inline"
+                  script: |
+                    java -jar wss-unified-agent.jar `
+                      -c wss-unified-agent.config -noConfig true `
+                      -apiKey "$env:MEND_API_KEY" `
+                      -wss_url "https://app.whitesourcesoftware.com/agent" `
+                      -product "$env:MEND_PRODUCT_NAME" `
+                      -project "$env:MEND_PROJECT_NAME"
+                  pwsh: true
+                displayName: "Whitesource Command Line Script"
+                enabled: true
+                env:
+                  MEND_API_KEY: $(MEND_API_KEY)
+                  MEND_PRODUCT_NAME: $(setMendProjectKeyAndName.MEND_PRODUCT_NAME)
+                  MEND_PROJECT_NAME: $(setMendProjectKeyAndName.MEND_PROJECT_NAME)
+          - ${{ if eq(parameters.useWindowsPool, false) }}:
+              - script: |
+                  java -jar wss-unified-agent.jar \
+                    -c wss-unified-agent.config -noConfig true \
+                    -apiKey $(MEND_API_KEY) \
+                    -wss.url https://app.whitesourcesoftware.com/agent \
+                    -product $(setMendProjectKeyAndName.MEND_PRODUCT_NAME) \
+                    -project $(setMendProjectKeyAndName.MEND_PROJECT_NAME)
+                displayName: "Whitesource Command Line Script"
+                enabled: true

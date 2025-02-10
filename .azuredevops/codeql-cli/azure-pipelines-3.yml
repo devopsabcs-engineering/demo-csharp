@@ -1,0 +1,102 @@
+# .NET Desktop
+# Build and run tests for .NET Desktop or Windows classic desktop solutions.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/apps/windows/dot-net
+
+trigger:
+- none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  sourceSarifFolder: /home/vsts/work/_temp/.advsec
+  codeqlSarifFile: codeql-csharp-results.sarif
+
+steps:
+- task: AdvancedSecurity-Codeql-Init@1
+  displayName: 'Initialize CodeQL'
+  inputs:
+    languages: csharp
+    querysuite: security-and-quality
+  enabled: false
+- task: CmdLine@2
+  displayName: init codeql db manually
+  inputs:
+    script: |
+      echo "run codeql cli manually"
+      #mkdir dbc
+      #/opt/hostedtoolcache/CodeQL/2.17.3/x64/codeql/codeql database init --db-cluster dbc --source-root=/home/vsts/work/1/s --language=csharp --begin-tracing --calculate-baseline
+      /opt/hostedtoolcache/CodeQL/2.17.3/x64/codeql/codeql database create db --language=csharp
+- task: AdvancedSecurity-Codeql-Autobuild@1
+  enabled: false
+- task: MSBuild@1
+  inputs:
+    solution: '**/*.sln'
+    msbuildVersion: '15.0'
+    msbuildArchitecture: 'x64'
+- task: AdvancedSecurity-Dependency-Scanning@1
+  displayName: 'Dependency Scanning'
+- task: AdvancedSecurity-Codeql-Analyze@1
+  displayName: 'Perform CodeQL analysis'
+  enabled: false
+- task: CmdLine@2
+  displayName: perform codeql analysis
+  inputs:
+    script: |
+      echo "run codeql cli manually"
+      #mkdir dbc
+      #/opt/hostedtoolcache/CodeQL/2.17.3/x64/codeql/codeql database init --db-cluster dbc --source-root=/home/vsts/work/1/s --language=csharp --begin-tracing --calculate-baseline
+      /opt/hostedtoolcache/CodeQL/2.17.3/x64/codeql/codeql database analyze db csharp-code-scanning.qls --format=sarif-latest --output=$(codeqlSarifFile)
+- task: CmdLine@2
+  displayName: get contents of codeql sarif
+  inputs:
+    script: |
+      echo Write your commands here
+      
+      echo Hello world
+
+      cat $(codeqlSarifFile)
+- task: AdvancedSecurity-Publish@1
+  inputs:
+    SarifsInputDirectory: '$(System.DefaultWorkingDirectory)'
+    #Category: 'codeql'
+  enabled: true
+- task: MicrosoftSecurityDevOps@1
+  inputs:
+    command: 'pre-job'
+  enabled: true
+- task: TrivySarif@1
+  enabled: true
+- task: TerrascanSarif@1
+  enabled: true
+- task: TemplateAnalyzerSarif@1
+  enabled: true
+- task: CopyFiles@2
+  displayName: push codeql sarif
+  inputs:
+    SourceFolder: '$(System.DefaultWorkingDirectory)'
+    Contents: '$(codeqlSarifFile)'
+    TargetFolder: '$(build.artifactstagingdirectory)'
+- task: CopyFiles@2
+  displayName: push IaC sarifs
+  inputs:
+    SourceFolder: '$(sourceSarifFolder)'
+    Contents: '*.sarif'
+    TargetFolder: '$(build.artifactstagingdirectory)'
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'CodeAnalysisLogs'
+    publishLocation: 'Container'
+- task: AdvancedSecurity-Publish@1
+  inputs:
+    SarifsInputDirectory: '$(sourceSarifFolder)'
+  enabled: true
+- task: MicrosoftSecurityDevOps@1
+  inputs:
+    command: 'post-job'
+  enabled: true

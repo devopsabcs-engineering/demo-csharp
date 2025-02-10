@@ -1,0 +1,197 @@
+# DevOps Shield - The ultimate DevSecOps platform designed to secure your DevOps.
+# https://devopsshield.com
+##############################################################
+# This is a DevOps Shield - Application Security - Code Security Template.
+
+# This workflow template uses actions that are not certified by DevOps Shield.
+# They are provided by a third-party and are governed by separate terms of service, privacy policy, and support documentation.
+
+# Use this workflow template for integrating code security into your pipelines and workflows.
+
+# DevOps Shield Workflow Template Details:
+# ------------------------------------------------------------
+# Code: ADO_SAST_SONARQUBE_DOTNET
+# Name: SonarQube Scan .NET
+# DevSecOpsControls: SAST
+# Provider: SonarSource
+# Categories: Code Scanning
+# Description:
+# SonarQube is an open-source platform developed by SonarSource for continuous inspection of code quality to perform automatic reviews with static analysis of code to detect bugs, code smells, and security vulnerabilities.
+# Read the official documentation to find out more. Requires Azure DevOps SonarQube extension (https://marketplace.visualstudio.com/items?itemName=SonarSource.sonarqube).
+# For more information:
+# https://www.sonarqube.org/
+# https://github.com/SonarSource/sonarqube
+# ------------------------------------------------------------
+# Source repository: https://github.com/SonarSource/sonarqube
+##############################################################
+
+name: SonarQube Scan .NET
+
+trigger:
+  batch: true
+  branches:
+    include: [main]
+
+schedules:
+  - cron: 0 0 * * 0
+    displayName: Weekly Sunday build
+    branches:
+      include: [main]
+    always: true
+
+parameters:
+  - name: sonarQubeServiceConnection
+    type: string
+    default: "Sonar"
+    displayName: "SonarQube Service Connection"
+  - name: useClassicDotNet
+    type: boolean
+    default: true # set to true if you are using classic .NET
+    displayName: "Use Classic .NET"
+  - name: useWindowsPool
+    type: boolean
+    default: true # set to true if you need a Windows pool e.g. for classic .NET
+    displayName: "Use Windows Pool"
+  - name: defaultWindowsPool
+    type: string
+    default: "windows-2019"
+    displayName: "Default Windows Pool"
+  - name: defaultLinuxPool
+    type: string
+    default: "ubuntu-latest"
+    displayName: "Default Linux Pool"
+
+variables:
+  - name: cliSources
+    value: "$(System.DefaultWorkingDirectory)"
+  - name: SONARQUBE_PROJECT_VERSION
+    value: "1.0"
+  - name: dotNetCoreVersion
+    value: "9.x"
+  - name: buildConfiguration
+    value: "Release"
+  - name: solution
+    value: "**/*.sln"
+  - name: buildPlatform
+    value: "Any CPU"
+
+stages:
+  - stage: SAST
+    displayName: Static Analysis Security test
+    jobs:
+      - job: SAST
+        displayName: Static Analysis Security test
+        pool:
+          ${{ if eq(parameters.useWindowsPool, true) }}:
+            vmImage: ${{ parameters.defaultWindowsPool }}
+          ${{ if eq(parameters.useWindowsPool, false) }}:
+            vmImage: ${{ parameters.defaultLinuxPool }}
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          # if you are using a Windows pool
+          - ${{ if eq(parameters.useWindowsPool, true) }}:
+              - task: PowerShell@2
+                inputs:
+                  targetType: "inline"
+                  script: |
+                    # Write your PowerShell commands here.
+                    $orgUrl = $env:System_CollectionUri
+                    Write-Output "Organization Url: $orgUrl"
+
+                    $orgName = $orgUrl.Split('/')[3]
+                    Write-Output "Organization Name: $orgName"
+
+                    $projectName = $env:System_TeamProject
+                    Write-Output "Project Name: $projectName"
+
+                    # get repository name
+                    $repoName = $env:Build_Repository_Name
+                    Write-Output "Repository Name: $repoName"
+
+                    # default Product Name should be ado org name _ azure devops project name
+                    $DEFAULT_PRODUCT_NAME = "${orgName}_${projectName}_${repoName}"
+                    Write-Output "Default Product Name: $DEFAULT_PRODUCT_NAME"
+                    Write-Output "##vso[task.setvariable variable=DEFAULT_PRODUCT_NAME;isOutput=true]$DEFAULT_PRODUCT_NAME"
+
+                    $sonarQubeProjectKey = $DEFAULT_PRODUCT_NAME -replace ' ', '_'
+                    Write-Output "SonarQube Project Key: $sonarQubeProjectKey"
+
+                    $sonarQubeProjectName = $DEFAULT_PRODUCT_NAME
+                    Write-Output "SonarQube Project Name: $sonarQubeProjectName"
+
+                    Write-Output "##vso[task.setvariable variable=SONARQUBE_PROJECT_KEY;isOutput=true]$sonarQubeProjectKey"
+                    Write-Output "##vso[task.setvariable variable=SONARQUBE_PROJECT_NAME;isOutput=true]$sonarQubeProjectName"
+                  pwsh: true
+                displayName: "Set SonarQube Project Key and Name (Windows Pool)"
+                name: setSonarQubeProjectKeyAndName
+          # if you are using a Linux pool
+          - ${{ if eq(parameters.useWindowsPool, false) }}:
+              - script: |
+                  orgUrl=$(System.CollectionUri)
+                  echo "Organization Url: $orgUrl"
+                  orgName=$(echo $orgUrl | cut -d'/' -f4)
+                  echo "Organization Name: $orgName"
+                  projectName=$(System.TeamProject)
+                  echo "Project Name: $projectName"
+
+                  # get repository name
+                  repoName=$(Build.Repository.Name)
+                  echo "Repository Name: $repoName"
+
+                  # default Product Name should be ado org name _ azure devops project name
+                  DEFAULT_PRODUCT_NAME="${orgName}_${projectName}_${repoName}"
+                  echo "Default Product Name: $DEFAULT_PRODUCT_NAME"      
+                  echo "##vso[task.setvariable variable=DEFAULT_PRODUCT_NAME;isOutput=true]$DEFAULT_PRODUCT_NAME"
+                  sonarQubeProjectKey=$(echo $DEFAULT_PRODUCT_NAME | tr ' ' '_')
+                  echo "SonarQube Project Key: ${sonarQubeProjectKey}"
+                  sonarQubeProjectName=$DEFAULT_PRODUCT_NAME
+                  echo "SonarQube Project Name: $sonarQubeProjectName"
+                  echo "##vso[task.setvariable variable=SONARQUBE_PROJECT_KEY;isOutput=true]$sonarQubeProjectKey"
+                  echo "##vso[task.setvariable variable=SONARQUBE_PROJECT_NAME;isOutput=true]$sonarQubeProjectName"
+                displayName: "Set SonarQube Project Key and Name (Linux Pool)"
+                name: setSonarQubeProjectKeyAndName
+          # verify the project key and name
+          - script: |
+              echo "Default Product Name: $(setSonarQubeProjectKeyAndName.DEFAULT_PRODUCT_NAME)"
+              echo "SonarQube Project Key: $(setSonarQubeProjectKeyAndName.SONARQUBE_PROJECT_KEY)"
+              echo "SonarQube Project Name: $(setSonarQubeProjectKeyAndName.SONARQUBE_PROJECT_NAME)"
+            displayName: "Verify SonarQube Project Key and Name"
+          - task: SonarQubePrepare@7
+            inputs:
+              SonarQube: "${{ parameters.sonarQubeServiceConnection }}"
+              scannerMode: "dotnet"
+              projectKey: "$(setSonarQubeProjectKeyAndName.SONARQUBE_PROJECT_KEY)"
+              projectName: "$(setSonarQubeProjectKeyAndName.SONARQUBE_PROJECT_NAME)"
+              projectVersion: "SONARQUBE_PROJECT_VERSION"
+          # needed for classic dotnet projects
+          - task: NuGetCommand@2
+            condition: eq('${{ parameters.useClassicDotNet }}', true) # only run this task if useClassicDotNet is true
+            displayName: "NuGet restore (.NET Framework Classic)"
+            inputs:
+              restoreSolution: "$(solution)"
+          - task: VSBuild@1
+            condition: eq('${{ parameters.useClassicDotNet }}', true) # only run this task if useClassicDotNet is true
+            displayName: "Build .NET Framework Classic"
+            inputs:
+              solution: "$(solution)"
+              platform: "$(buildPlatform)"
+              configuration: "$(buildConfiguration)"
+          # needed for dotnet core projects
+          - task: UseDotNet@2
+            condition: eq('${{ parameters.useClassicDotNet }}', false) # only run this task if useClassicDotNet is false
+            displayName: "Use .NET Core sdk"
+            inputs:
+              packageType: "sdk"
+              version: "$(dotNetCoreVersion)"
+          - task: DotNetCoreCLI@2
+            condition: eq('${{ parameters.useClassicDotNet }}', false) # only run this task if useClassicDotNet is false
+            displayName: "Build .NET Core"
+            inputs:
+              command: "build"
+              projects: "**/*.csproj"
+              arguments: "--configuration $(buildConfiguration)"
+          - task: SonarQubeAnalyze@7
+          - task: SonarQubePublish@7
+            inputs:
+              pollingTimeoutSec: "300"
